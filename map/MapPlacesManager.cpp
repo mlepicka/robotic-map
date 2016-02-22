@@ -103,6 +103,7 @@ void MapPlacesManager::addAtCenter(bool orderBeforeSelected)
         }
         MapObjectPtr place = makePlace(coords, mCurrentEditMode);
         GeoObjectID id = GeoReferenceFactory::createGeoObjectId();
+
         mPlacemarkLogic->addOrUpdatePlacemark(id, place);
     }
 }
@@ -376,6 +377,7 @@ void MapPlacesManager::selectPlacemark(PlacemarkPtr place)
         emit selectionModeChanged(true);
     }
 }
+
 
 
 

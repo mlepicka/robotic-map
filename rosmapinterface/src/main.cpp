@@ -18,6 +18,7 @@
 
 //#include <std_msgs/String.h>
 //#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <ros/ros.h>
 
 #include "rosmapinterface/RobotInformation.h"
@@ -68,6 +69,7 @@ signals:
     void robotUpdate(MapRobotObjectPtr newState);
     void receivingRobotID(int id);
 
+
 public:
     static void start(MapWrapPtr mapWrap, QSharedPointer<ros::NodeHandle> handle, RobotIDListener *l)
     {
@@ -103,6 +105,7 @@ private:
         obj->setOrientationAvailable(hasOrientation);
         emit robotUpdate(obj);
         emit receivingRobotID(robotID);
+
     }
 
     void runListener(MapWrapPtr mapWrap, QSharedPointer<ros::NodeHandle> handle, RobotIDListener *l)
@@ -116,10 +119,147 @@ private:
         std::string subscriberTopic = "robot_introduction";
         ros::Subscriber subs = handle->subscribe<rosmapinterface::RobotInformation>(
                     subscriberTopic, 100, &RosBeaconListener::beaconCallback, this);
-
-        ros::spin();
+       //  while(ros::ok()){
+            ros::spin();
+        // }
     }
 };
+
+class RosBeaconLocationListener : public QObject
+{
+    Q_OBJECT
+signals:
+    void robotPositionRelativeToOperator(int targetRobotID, MapAbstraction::GeoCoords position);
+    void robotUpdate(MapRobotObjectPtr newState);
+    void receivingRobotID(int id);
+public:
+    static void start(MapWrapPtr mapWrap, QSharedPointer<ros::NodeHandle> handle, RobotIDListener *l)
+    {
+        QtConcurrent::run(&RosBeaconLocationListener::startNewThread, mapWrap, handle, l);
+    }
+
+private:
+    static void startNewThread(MapWrapPtr mapWrap, QSharedPointer<ros::NodeHandle> handle, RobotIDListener *l)
+    {
+        RosBeaconLocationListener listener;
+        listener.runListener(mapWrap, handle, l);
+    }
+
+    void beaconCallback(const rosmapinterface::RobotInformation::ConstPtr& msg)
+    {
+        bool hasOrientation = true;
+        double orientation = msg->theta;
+        QString name(msg->robot_type.data());
+        QString type(msg->robot_name.data());
+        QString description(msg->description.data());
+        RobotState state = RobotStateNormal;
+        MapAbstraction::MapObject::LocalizationType lt = localization(msg->localization_type);
+        MapAbstraction::MapObject::LocalizationMode lm = mode(lt);
+        MapAbstraction::GeoCoords coords(msg->x, msg->y);
+        int robotID = msg->robot_id;
+        int consoleID = 0;
+        MapAbstraction::MapRobotObjectPtr obj(
+                    new MapAbstraction::MapRobotObject(
+                        coords, orientation, state,
+                        type, name, description,
+                        robotID, consoleID,
+                        lt, lm));
+        obj->setOrientationAvailable(hasOrientation);
+        emit robotPositionRelativeToOperator(robotID, coords);
+    }
+
+    void runListener(MapWrapPtr mapWrap, QSharedPointer<ros::NodeHandle> handle, RobotIDListener *l)
+    {
+        connect(this, SIGNAL(receivingRobotID(int)), l, SLOT(robotDetected(int)));
+        qDebug("RobotInformation listener running");
+        qRegisterMetaType<MapRobotObjectPtr>("MapRobotObjectPtr");
+        connect(this, SIGNAL(robotUpdate(MapRobotObjectPtr)),
+                mapWrap.data(), SLOT(updateRobot(MapRobotObjectPtr)), Qt::QueuedConnection);
+
+        std::string subscriberTopic = "robot_introduction";
+        ros::Subscriber subs = handle->subscribe<rosmapinterface::RobotInformation>(
+                    subscriberTopic, 100, &RosBeaconLocationListener::beaconCallback, this);
+        ros::Rate rate(24.);
+        //ros::spin();
+        while(ros::ok()){
+            rate.sleep();
+            ros::spinOnce();
+        }
+    }
+};
+
+class RosRobotLocationSender : public RobotIDListener
+{
+    Q_OBJECT
+    signals:
+        void robotPositionRelativeToOperator(int targetRobotID, MapAbstraction::GeoCoords position);
+        void robotConnected(int robot, bool connected);
+
+    public:
+        RosRobotLocationSender(MapWrapPtr mapWrap, QSharedPointer<ros::NodeHandle> handle)
+            : mRosHandle(handle), mMapWrap(mapWrap)
+        {
+            connectSignals();
+        }
+
+public slots:
+    void positionReceived(int robotID, MapAbstraction::GeoCoords position)
+    {
+        onRobotDetected(robotID);
+        qDebug("Received position for robot %d", robotID);
+        geometry_msgs::PoseStamped msg;
+//        MapWaypointObjectPtr waypoint = waypoints.first();
+        msg.header.frame_id = "robot_location"; //"Go there now"
+        msg.pose.position.x = position.longitude();
+        msg.pose.position.y = position.latitude();
+        //msg.pose.position.y = 0;
+
+        mPublishersForRobots.value(robotID)->publish(msg);
+    }
+
+    void onRobotDetected(int robotID)
+    {
+        if (!mPublishersForRobots.contains(robotID))
+        {
+            qDebug("Robot %d detected", robotID);
+            QString topic = "/robot/" + QString::number(robotID) + "/location";
+            ros::Publisher pub = mRosHandle->advertise<geometry_msgs::PoseStamped>(
+                        topic.toStdString(), 5);
+            qDebug("Advertising topic %s", qPrintable(topic));
+            mPublishersForRobots.insert(robotID, QSharedPointer<ros::Publisher>(new ros::Publisher(pub)));
+
+        }
+    }
+
+private slots:
+    void onConnectionRequest(int robotID, bool connected)
+    {   //For connection oriented robots, some logic could be here (i.e negotiate connection,
+        //disconnect from previous robot)
+        emit robotConnected(robotID, connected);
+    }
+
+private:
+    void connectSignals()
+    {
+        qRegisterMetaType<MapAbstraction::GeoCoords>("MapAbstraction::GeoCoords");
+        connect(mMapWrap->sender().data(), SIGNAL(robotPositionRelativeToOperator(int,MapAbstraction::GeoCoords)),
+                this, SLOT(positionReceived(int,MapAbstraction::GeoCoords)),
+                Qt::QueuedConnection);
+
+        connect(mMapWrap->sender().data(), SIGNAL(requestConnect(int,bool)),
+                this, SLOT(onConnectionRequest(int,bool)),
+                Qt::QueuedConnection);
+
+        connect(this, SIGNAL(robotConnected(int, bool)),
+                mMapWrap.data(), SLOT(robotConnected(int, bool)),
+                Qt::QueuedConnection);
+    }
+
+    QMap<int, QSharedPointer<ros::Publisher> > mPublishersForRobots;
+    QSharedPointer<ros::NodeHandle> mRosHandle;
+    MapWrapPtr mMapWrap;
+};
+
 
 class RosWaypointSender : public RobotIDListener
 {
@@ -231,6 +371,8 @@ public:
 
         mSender.reset(new RosWaypointSender(mMapWrap, mHandle));
         RosBeaconListener::start(mMapWrap, mHandle, mSender.data());
+        mRobotSender.reset(new RosRobotLocationSender(mMapWrap, mHandle));
+        RosBeaconLocationListener::start(mMapWrap,mHandle, mRobotSender.data());
 
         QTimer *checker = new QTimer(this);
         connect(checker, SIGNAL(timeout()), this, SLOT(checkMaster()));
@@ -263,6 +405,7 @@ private:
     QSharedPointer<ros::NodeHandle> mHandle;
     MapWrapPtr mMapWrap;
     QSharedPointer<RosWaypointSender> mSender;
+    QSharedPointer<RosRobotLocationSender> mRobotSender;
 };
 
 int main(int argc, char *argv[])
