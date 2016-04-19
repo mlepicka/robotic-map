@@ -3,7 +3,7 @@ project(rosmapinterface)
 
 find_package(catkin REQUIRED COMPONENTS roscpp std_msgs message_generation)
 
-#set(CMAKE_PREFIX_PATH ~/Qt5.3.1/5.3/gcc_64/lib/cmake)
+set(CMAKE_PREFIX_PATH /opt/Qt5.5.0/5.5/gcc_64/lib/cmake)
 find_package(Qt5Core REQUIRED)
 find_package(Qt5Quick REQUIRED)
 find_package(Qt5Widgets REQUIRED)
@@ -12,6 +12,7 @@ message(WARNING, "1. |${catkin_INCLUDE_DIRS}|${CATKIN_DEVEL_PREFIX}|${CMAKE_INST
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
+#set(CMAKE_PREFIX_PATH /usr/lib/x86_64-linux-gnu/cmake)
 
 add_message_files(FILES RobotInformation.msg WaypointInformation.msg)
 generate_messages(DEPENDENCIES std_msgs)
@@ -34,4 +35,6 @@ add_executable(fakeRobot src/fakeRobot.cpp)
 target_link_libraries(fakeRobot Qt5::Core ${catkin_LIBRARIES})
 add_dependencies(fakeRobot rosmapinterface_generate_messages_cpp)
 
-
+add_executable(fakeRobot2 src/fakeRobot2.cpp)
+target_link_libraries(fakeRobot2 Qt5::Core ${catkin_LIBRARIES})
+add_dependencies(fakeRobot2 rosmapinterface_generate_messages_cpp)

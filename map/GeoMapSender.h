@@ -20,7 +20,7 @@ namespace MapAbstraction
 
         //This signal is sent if operator position is available (i.e. it has been manually localized).
         //Position is in meters of distance in x axis and y axis (compass-enabled receivers use x=east and y=north).
-        void robotPositionRelativeToOperator(int targetRobotID, MapAbstraction::GeoCoords position);
+        void robotPositionRelativeToOperator(int targetRobotID, MapAbstraction::GeoCoords position, MapAbstraction::GeoCoords operatorPosition);
 
         //Request connection with robot (for connection-oriented protocols,
         //for ROS robots, the handler should always respond with success (see IMapSignalReceiver)

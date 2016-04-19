@@ -34,6 +34,7 @@
 #include "MapRobotObject.h"
 #include "MapWaypointObject.h"
 
+
 using namespace Marble;
 using namespace MapAbstraction;
 
@@ -364,15 +365,20 @@ void RoboticsMap::updatePlacemark(GeoObjectID id, MapRobotObjectPtr robotObjectD
             //check this cosinus
             qreal metersInRadianOfLatitude = cos(placeCoords.latitude()) * model()->planetRadius();
 
+            float toDegree = 180.00/M_PI;
             qreal y = (placeCoords.latitude() - robotCoords.latitude()) * metersInRadianOfLatitude;
             qreal x = (placeCoords.longitude() - robotCoords.longitude()) * metersInRadianOfLongitude;
 
+            qreal y_o = placeCoords.latitude()*toDegree;
+            qreal x_o = placeCoords.longitude()*toDegree;
+
+            GeoCoords operatorPos(x_o, y_o);
             GeoCoords metersXYCoords(x, y);
 
        //     if (robotObjectData->connected())
             {   //TODO - no need to send only for connected. Send for all.
                 qDebug("Position Available %lf %lf", x, y);
-                sender()->robotPositionRelativeToOperator(robotObjectData->robotID(), metersXYCoords);
+                sender()->robotPositionRelativeToOperator(robotObjectData->robotID(), metersXYCoords, operatorPos);
             }
             break;
         }
